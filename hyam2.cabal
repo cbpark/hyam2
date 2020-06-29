@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: a2fa5ad5ae25cc0c42f6159a5403f847e1f6555c9611b95e78f31ebe66796517
+-- hash: 29e2ec48571c3bcb7261873da18aba62c4a903e96184c69ed6cff00a3e628c7e
 
 name:           hyam2
 version:        0.0.0.0
@@ -24,6 +24,7 @@ source-repository head
 executable hyam2
   main-is: hyam2.hs
   other-modules:
+      HEP.Kinematics.Variable.M2
       Paths_hyam2
   hs-source-dirs:
       src

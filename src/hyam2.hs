@@ -1,5 +1,7 @@
 module Main where
 
+import           HEP.Kinematics.Variable.M2
+
 import           HEP.Data.LHEF
 
 import           Codec.Compression.GZip     (decompress)
@@ -38,8 +40,17 @@ selectP ev = do
     isNeutrino = (`elem` neutrinos) . idOf
     momentumSum' = momentumSum . fmap fourMomentum
 
+-- mInv2 :: Maybe ([FourMomentum], TransverseMomentum) -> Double
+-- mInv2 = fromMaybe 0 . mInv2'
+--   where
+--     mInv2' ps = do (pVis, ptmiss) <- ps
+--                    if length pVis /= 2
+--                        then Nothing
+--                        else do let [v1, v2] = pVis
+--                                return $ objFunc v1 v2 0 (px ptmiss, py ptmiss, 0)
+
 mTtot :: Maybe ([FourMomentum], TransverseMomentum) -> Double
 mTtot = fromMaybe 0 . mTtot'
   where
     mTtot' ps = do (pVis, ptmiss) <- ps
-                   return $ transverseMass pVis (promoteTV ptmiss 0)
+                   return $ transverseMass pVis (promote2TV ptmiss 0)
