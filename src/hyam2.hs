@@ -24,6 +24,7 @@ main = do
         >-> P.map selectP
         -- >-> P.map mTtot
         >-> P.map mInv2
+        -- >-> P.map mDiff2
         >-> P.print
 
 selectP :: Event -> Maybe ([FourMomentum], TransverseMomentum)
@@ -51,6 +52,18 @@ mInv2 = fromMaybe 0 . mInv2'
             else do let [v1, v2] = pVis
                     return $ objFunc (InputKinematics v1 v2 ptmiss 0)
                         (px ptmiss, py ptmiss, 0, 0)
+
+-- mDiff2 :: Maybe ([FourMomentum], TransverseMomentum)
+--        -> (Double, Double, Double, Double)
+-- mDiff2 = fromMaybe (0, 0, 0, 0) . mDiff2'
+--   where
+--     mDiff2' ps = do
+--         (pVis, ptmiss) <- ps
+--         if length pVis /= 2
+--             then Nothing
+--             else do let [v1, v2] = pVis
+--                     return $ objFuncDiff (InputKinematics v1 v2 ptmiss 0)
+--                         (px ptmiss, py ptmiss, 0, 0)
 
 -- mTtot :: Maybe ([FourMomentum], TransverseMomentum) -> Double
 -- mTtot = fromMaybe 0 . mTtot'
