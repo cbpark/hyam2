@@ -22,8 +22,8 @@ main = do
     runEffect $ getLHEFEvent fromLazy events
         >-> P.take 3
         >-> P.map selectP
-        -- >-> P.map mTtot
-        >-> P.map mInv2
+        >-> P.map mTtot
+        -- >-> P.map mInv2
         -- >-> P.map mDiff2
         >-> P.print
 
@@ -42,16 +42,16 @@ selectP ev = do
     isNeutrino = (`elem` neutrinos) . idOf
     momentumSum' = momentumSum . fmap fourMomentum
 
-mInv2 :: Maybe ([FourMomentum], TransverseMomentum) -> Double
-mInv2 = fromMaybe 0 . mInv2'
-  where
-    mInv2' ps = do
-        (pVis, ptmiss) <- ps
-        if length pVis /= 2
-            then Nothing
-            else do let [v1, v2] = pVis
-                    return $ objFunc (InputKinematics v1 v2 ptmiss 0)
-                        (px ptmiss, py ptmiss, 0, 0)
+-- mInv2 :: Maybe ([FourMomentum], TransverseMomentum) -> Double
+-- mInv2 = fromMaybe 0 . mInv2'
+--   where
+--     mInv2' ps = do
+--         (pVis, ptmiss) <- ps
+--         if length pVis /= 2
+--             then Nothing
+--             else do let [v1, v2] = pVis
+--                     return $ objFunc (InputKinematics v1 v2 ptmiss 0)
+--                         (px ptmiss, py ptmiss, 0, 0)
 
 -- mDiff2 :: Maybe ([FourMomentum], TransverseMomentum)
 --        -> (Double, Double, Double, Double)
@@ -65,8 +65,8 @@ mInv2 = fromMaybe 0 . mInv2'
 --                     return $ objFuncDiff (InputKinematics v1 v2 ptmiss 0)
 --                         (px ptmiss, py ptmiss, 0, 0)
 
--- mTtot :: Maybe ([FourMomentum], TransverseMomentum) -> Double
--- mTtot = fromMaybe 0 . mTtot'
---   where
---     mTtot' ps = do (pVis, ptmiss) <- ps
---                    return $ transverseMass pVis (promote2TV ptmiss 0)
+mTtot :: Maybe ([FourMomentum], TransverseMomentum) -> Double
+mTtot = fromMaybe 0 . mTtot'
+  where
+    mTtot' ps = do (pVis, ptmiss) <- ps
+                   return $ transverseMass pVis (promote2TV ptmiss 0)
