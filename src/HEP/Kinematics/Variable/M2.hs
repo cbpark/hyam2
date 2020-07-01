@@ -58,10 +58,10 @@ objFunc (Just inp@InputKinematics {..}) ks
       let [k1x, k1y, k1z, k2z] = ks0
           vars = (k1x, k1y, k1z, k2z)
           (m1sq, m2sq, Invisibles k1 k2) = objFunc' inp vars
-          derivs = m2Diff _p1 _p2 k1 k2 _ptmiss vars
+          (deriv1, deriv2, _) = m2Diff _p1 _p2 k1 k2 _ptmiss vars
       in if m1sq < m2sq
-         then (m2sq, snd derivs)
-         else (m1sq, fst derivs)
+         then (m2sq, deriv2)
+         else (m1sq, deriv1)
   where ks0 = toList ks
 objFunc _ _ = badOutput
 
@@ -72,16 +72,13 @@ objFunc' inp@InputKinematics {..} ks =
         m2sq = invariantMassSq [_p2, k2]
     in (m1sq, m2sq, invs)
 
-badOutput :: (Double, Vector Double)
-badOutput = (1.0e+10, fromList [0,0,0,0])
-
 m2Diff :: FourMomentum  -- ^ p1 (or q1)
        -> FourMomentum  -- ^ p2 (or q2)
        -> FourMomentum  -- ^ k1
        -> FourMomentum  -- ^ k2
        -> TransverseMomentum
        -> Variables
-       -> (Vector Double, Vector Double)
+       -> (Vector Double, Vector Double, Double)
 m2Diff p1 p2 k1 k2 ptmiss (k1x, k1y, k1z, k2z) =
     let (e1, p1x, p1y, p1z) = epxpypz p1
         r1 = e1 / safeDivisor (energy k1)
@@ -96,9 +93,36 @@ m2Diff p1 p2 k1 k2 ptmiss (k1x, k1y, k1z, k2z) =
                       , 2 * (r2 * (k1y - py ptmiss) + p2y)
                       , 0
                       , 2 * (r2 * k2z - p2z) ]
-    in (d1, d2)
+
+        deltaMsq = invariantMassSq [p1 + k1] - invariantMassSq [p2 + k2]
+    in (d1, d2, deltaMsq)
+
+constraintA :: InputKinematics -> Vector Double -> (Double, Vector Double)
+constraintA inp@InputKinematics {..} ks
+    | length ks0 /= 4 = badOutput
+    | otherwise       =
+      let [k1x, k1y, k1z, k2z] = ks0
+          vars = (k1x, k1y, k1z, k2z)
+          (m1sq, m2sq, Invisibles k1 k2) = objFunc' inp vars
+          (deriv1, deriv2, _) = m2Diff _p1 _p2 k1 k2 _ptmiss vars
+      in (m1sq - m2sq, deriv1 - deriv2)
+  where ks0 = toList ks
+
+constraintB :: InputKinematics -> Vector Double -> (Double, Vector Double)
+constraintB inp@InputKinematics {..} ks
+    | length ks0 /= 4 = badOutput
+    | otherwise       =
+      let [k1x, k1y, k1z, k2z] = ks0
+          vars = (k1x, k1y, k1z, k2z)
+          (_, _, Invisibles k1 k2) = objFunc' inp vars
+          (deriv1, deriv2, deltaMsq) = m2Diff _q1 _q2 k1 k2 _ptmiss vars
+      in (deltaMsq, deriv1 - deriv2)
+  where ks0 = toList ks
 
 safeDivisor :: Double -> Double
 safeDivisor x | x >= 0    = max eps x
               | otherwise = min (-eps) x
   where eps = 1.0e-8
+
+badOutput :: (Double, Vector Double)
+badOutput = (1.0e+10, fromList [0,0,0,0])
