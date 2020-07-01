@@ -55,6 +55,5 @@ mInv2 = fromMaybe (0, fromList [0,0,0,0]) . mInv2'
   where
     mInv2' ps = do
         (bQuarks, leptons, ptmiss) <- ps
-        let [p1, p2] = zipWith (+) bQuarks leptons
-        return $ objFunc (InputKinematics p1 p2 ptmiss 0)
+        return $ objFunc (mkInput bQuarks leptons ptmiss 0)
             (fromList [px ptmiss, py ptmiss, 0, 0])
