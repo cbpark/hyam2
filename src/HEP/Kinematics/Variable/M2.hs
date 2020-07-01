@@ -35,57 +35,68 @@ mkInput as bs ptmiss mInv
                                    , _mInvSq = mInv * mInv
                                    }
 
+-- | (k1x, k1y, k1z, k2z).
+type Variables = (Double, Double, Double, Double)
+
 data Invisibles = Invisibles { _k1 :: FourMomentum , _k2 :: FourMomentum }
 
-mkInvisibles :: InputKinematics -> [Double] -> Maybe Invisibles
-mkInvisibles InputKinematics {..} [k1x, k1y, k1z, k2z] = do
+mkInvisibles :: InputKinematics -> Variables -> Invisibles
+mkInvisibles InputKinematics {..} (k1x, k1y, k1z, k2z) =
     let eInv1 = sqrt (k1x * k1x + k1y * k1y + k1z * k1z + _mInvSq)
         k1 = eInv1 `seq` setXYZT k1x k1y k1z eInv1
         k2x = px _ptmiss - k1x
         k2y = py _ptmiss - k1y
         eInv2 = sqrt (k2x * k2x + k2y * k2y + k2z * k2z + _mInvSq)
         k2 = eInv2 `seq` setXYZT k2x k2y k2z eInv2
-    return $ Invisibles k1 k2
-mkInvisibles _ _ = Nothing
+    in Invisibles k1 k2
 
 -- | the unknowns are (k1x, k2x, k1z, k2z).
 objFunc :: Maybe InputKinematics -> Vector Double -> (Double, Vector Double)
-objFunc (Just inp@InputKinematics {..}) ks =
-    let ks0 = toList ks
-    in if length ks0 /= 4
-       then badOutput
-       else case objFunc' inp ks0 of
-                Nothing                             -> badOutput
-                Just (m1sq, m2sq, Invisibles k1 k2) ->
-                    let [k1x, k1y, k1z, k2z] = ks0
-                    in if m1sq < m2sq
-                       then let (eVis2, p2x, p2y, p2z) = epxpypz _p2
-                                eInv2 = safeDivisor (energy k2)
-                                r2 = eVis2 / eInv2
-                                objDiff = [ 2 * (r2 * (k1x - px _ptmiss) + p2x)
-                                          , 2 * (r2 * (k1y - py _ptmiss) + p2y)
-                                          , 0
-                                          , 2 * (r2 * k2z - p2z) ]
-                            in (m2sq, fromList objDiff)
-                       else let (eVis1, p1x, p1y, p1z) = epxpypz _p1
-                                eInv1 = safeDivisor (energy k1)
-                                r1 = eVis1 / eInv1
-                                objDiff = [ 2 * (r1 * k1x - p1x)
-                                          , 2 * (r1 * k1y - p1y)
-                                          , 2 * (r1 * k1z - p1z)
-                                          , 0 ]
-                            in (m1sq, fromList objDiff)
+objFunc (Just inp@InputKinematics {..}) ks
+    | length ks0 /= 4 = badOutput
+    | otherwise       =
+      let [k1x, k1y, k1z, k2z] = ks0
+          vars = (k1x, k1y, k1z, k2z)
+          (m1sq, m2sq, Invisibles k1 k2) = objFunc' inp vars
+          derivs = m2Diff _p1 _p2 k1 k2 _ptmiss vars
+      in if m1sq < m2sq
+         then (m2sq, snd derivs)
+         else (m1sq, fst derivs)
+  where ks0 = toList ks
 objFunc _ _ = badOutput
+
+objFunc' :: InputKinematics -> Variables -> (Double, Double, Invisibles)
+objFunc' inp@InputKinematics {..} ks =
+    let invs@(Invisibles k1 k2) = mkInvisibles inp ks
+        m1sq = invariantMassSq [_p1, k1]
+        m2sq = invariantMassSq [_p2, k2]
+    in (m1sq, m2sq, invs)
 
 badOutput :: (Double, Vector Double)
 badOutput = (1.0e+10, fromList [0,0,0,0])
 
-objFunc' :: InputKinematics -> [Double] -> Maybe (Double, Double, Invisibles)
-objFunc' inp@InputKinematics {..} ks = do
-    invs@(Invisibles k1 k2) <- mkInvisibles inp ks
-    let m1sq = invariantMassSq [_p1, k1]
-        m2sq = invariantMassSq [_p2, k2]
-    return (m1sq, m2sq, invs)
+m2Diff :: FourMomentum  -- ^ p1 (or q1)
+       -> FourMomentum  -- ^ p2 (or q2)
+       -> FourMomentum  -- ^ k1
+       -> FourMomentum  -- ^ k2
+       -> TransverseMomentum
+       -> Variables
+       -> (Vector Double, Vector Double)
+m2Diff p1 p2 k1 k2 ptmiss (k1x, k1y, k1z, k2z) =
+    let (e1, p1x, p1y, p1z) = epxpypz p1
+        r1 = e1 / safeDivisor (energy k1)
+        d1 = fromList [ 2 * (r1 * k1x - p1x)
+                      , 2 * (r1 * k1y - p1y)
+                      , 2 * (r1 * k1z - p1z)
+                      , 0 ]
+
+        (e2, p2x, p2y, p2z) = epxpypz p2
+        r2 = e2 / safeDivisor (energy k2)
+        d2 = fromList [ 2 * (r2 * (k1x - px ptmiss) + p2x)
+                      , 2 * (r2 * (k1y - py ptmiss) + p2y)
+                      , 0
+                      , 2 * (r2 * k2z - p2z) ]
+    in (d1, d2)
 
 safeDivisor :: Double -> Double
 safeDivisor x | x >= 0    = max eps x
