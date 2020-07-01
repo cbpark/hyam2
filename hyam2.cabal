@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: a4220f43237e2ff59d063a641d7b2c04fbf11711b0f03c4e283124d816f45c7b
+-- hash: aaeb9d6d74b594401634ab385eb3967e9a060d9f75a3c700f35a746129292639
 
 name:           hyam2
 version:        0.0.0.0
@@ -34,6 +34,7 @@ executable hyam2
     , bytestring
     , hep-utilities
     , hmatrix
+    , hmatrix-nlopt
     , pipes
     , pipes-bytestring
     , zlib
