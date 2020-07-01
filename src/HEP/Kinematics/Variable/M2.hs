@@ -8,19 +8,20 @@ import HEP.Kinematics.Vector.LorentzVector (setXYZT)
 import Numeric.LinearAlgebra               (Vector, fromList, toList)
 
 data InputKinematics = InputKinematics
-                       { _p1     :: FourMomentum
-                       , _p2     :: FourMomentum
-                       , _q1     :: FourMomentum
-                       , _q2     :: FourMomentum
+                       { _p1     :: FourMomentum  -- ^ p1 = a1 + b1
+                       , _p2     :: FourMomentum  -- ^ p2 = a2 + b2
+                       , _q1     :: FourMomentum  -- ^ q1 = b1
+                       , _q2     :: FourMomentum  -- ^ q2 = b2
                        , _ptmiss :: TransverseMomentum
                          -- | squared mass of the invisible particle
                        , _mInvSq :: !Double
                        }
 
-mkInput :: [FourMomentum]
-        -> [FourMomentum]
-        -> TransverseMomentum
-        -> Double
+-- | creates the input for A1 + A2 --> a1 B1 + a2 B2 --> a1 b1 C1 + a2 b2 C2.
+mkInput :: [FourMomentum]      -- ^ [a1, a2]
+        -> [FourMomentum]      -- ^ [b1, b2]
+        -> TransverseMomentum  -- ^ pT(miss)
+        -> Double              -- ^ M_{invisible}
         -> Maybe InputKinematics
 mkInput as bs ptmiss mInv
     | length as /= 2 || length bs /= 2 = Nothing
@@ -47,6 +48,7 @@ mkInvisibles InputKinematics {..} [k1x, k1y, k1z, k2z] = do
     return $ Invisibles k1 k2
 mkInvisibles _ _ = Nothing
 
+-- | the unknowns are (k1x, k2x, k1z, k2z).
 objFunc :: Maybe InputKinematics -> Vector Double -> (Double, Vector Double)
 objFunc (Just inp@InputKinematics {..}) ks =
     let ks0 = toList ks
