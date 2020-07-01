@@ -6,12 +6,15 @@ import           HEP.Data.LHEF
 
 import           Codec.Compression.GZip     (decompress)
 import qualified Data.ByteString.Lazy.Char8 as B
+import           Numeric.LinearAlgebra      (Vector, fromList)
 import           Pipes
 import           Pipes.ByteString           (fromLazy)
 import qualified Pipes.Prelude              as P
 
 import           Data.Maybe                 (fromMaybe)
 import           System.Environment         (getArgs)
+
+-- import           Debug.Trace
 
 main :: IO ()
 main = do
@@ -22,51 +25,36 @@ main = do
     runEffect $ getLHEFEvent fromLazy events
         >-> P.take 3
         >-> P.map selectP
-        >-> P.map mTtot
-        -- >-> P.map mInv2
-        -- >-> P.map mDiff2
+        >-> P.map mInv2
         >-> P.print
 
-selectP :: Event -> Maybe ([FourMomentum], TransverseMomentum)
+-- | returns four-momenta of b-quarks and leptons, ptmiss
+selectP :: Event -> Maybe ([FourMomentum], [FourMomentum], TransverseMomentum)
 selectP ev = do
     let topChild = particlesFrom topQuarks (eventEntry ev)
     if null topChild
-        then Nothing
-        else do
-            let pVis = momentumSum' . filter (not . isNeutrino) <$> topChild
-                pNu  = sum $ momentumSum' . filter isNeutrino   <$> topChild
-                ptmiss = transverseVector pNu
-            return (pVis, ptmiss)
+       then Nothing
+       else do
+        let bQuarks = concat $ getMomenta ofbQuark    <$> topChild
+            leptons = concat $ getMomenta ofIsoLepton <$> topChild
+            neus    = concat $ getMomenta ofNeutrino  <$> topChild
+        if length bQuarks /= 2 || length leptons /= 2
+            then Nothing
+            else do let ptmiss = transverseVector (sum neus)
+                    return (bQuarks, leptons, ptmiss)
   where
     topQuarks = ParticleType [6]
-    isNeutrino = (`elem` neutrinos) . idOf
-    momentumSum' = momentumSum . fmap fourMomentum
+    getMomenta selF = fmap fourMomentum . filter selF
+    ofbQuark    = (`elem` [5, -5])         . idOf
+    ofIsoLepton = (`elem` isolatedLeptons) . idOf
+    ofNeutrino  = (`elem` neutrinos)       . idOf
 
--- mInv2 :: Maybe ([FourMomentum], TransverseMomentum) -> Double
--- mInv2 = fromMaybe 0 . mInv2'
---   where
---     mInv2' ps = do
---         (pVis, ptmiss) <- ps
---         if length pVis /= 2
---             then Nothing
---             else do let [v1, v2] = pVis
---                     return $ objFunc (InputKinematics v1 v2 ptmiss 0)
---                         (px ptmiss, py ptmiss, 0, 0)
-
--- mDiff2 :: Maybe ([FourMomentum], TransverseMomentum)
---        -> (Double, Double, Double, Double)
--- mDiff2 = fromMaybe (0, 0, 0, 0) . mDiff2'
---   where
---     mDiff2' ps = do
---         (pVis, ptmiss) <- ps
---         if length pVis /= 2
---             then Nothing
---             else do let [v1, v2] = pVis
---                     return $ objFuncDiff (InputKinematics v1 v2 ptmiss 0)
---                         (px ptmiss, py ptmiss, 0, 0)
-
-mTtot :: Maybe ([FourMomentum], TransverseMomentum) -> Double
-mTtot = fromMaybe 0 . mTtot'
+mInv2 :: Maybe ([FourMomentum], [FourMomentum], TransverseMomentum)
+      -> (Double, Vector Double)
+mInv2 = fromMaybe (0, fromList [0,0,0,0]) . mInv2'
   where
-    mTtot' ps = do (pVis, ptmiss) <- ps
-                   return $ transverseMass pVis (promote2TV ptmiss 0)
+    mInv2' ps = do
+        (bQuarks, leptons, ptmiss) <- ps
+        let [p1, p2] = zipWith (+) bQuarks leptons
+        return $ objFunc (InputKinematics p1 p2 ptmiss 0)
+            (fromList [px ptmiss, py ptmiss, 0, 0])
