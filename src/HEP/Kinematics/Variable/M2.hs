@@ -5,7 +5,6 @@ module HEP.Kinematics.Variable.M2 where
 import HEP.Kinematics
 import HEP.Kinematics.Vector.LorentzVector (setXYZT)
 
--- import Control.Monad.Trans.State.Strict
 import Numeric.LinearAlgebra               (Vector, fromList, toList)
 import Numeric.NLOPT
 
@@ -70,9 +69,11 @@ data M2Solution = M2Solution { _M2    :: Double
 
 m2SQP :: Maybe InputKinematics -> Maybe M2Solution
 m2SQP Nothing                         = Nothing
-m2SQP (Just inp@InputKinematics {..}) = do
-    let objfD = m2ObjF inp
+m2SQP (Just inp@InputKinematics {..}) =
+    let -- objective function with gradient
+        objfD = m2ObjF inp
 
+        -- constraint function with gradient
         c1fD = constraintA inp
         c1 = EqualityConstraint (Scalar c1fD) 1e-9
         c2fD = constraintB inp
@@ -83,8 +84,13 @@ m2SQP (Just inp@InputKinematics {..}) = do
         algorithm = SLSQP objfD [] [] [c1, c2]
         problem = LocalProblem 4 stop algorithm
 
+        -- initial guess
         x0 = fromList [0.5 * px _ptmiss, 0.5 * py _ptmiss, 0, 0]
         sol = minimizeLocal problem x0
+    in getM2Solution inp sol
+
+getM2Solution :: InputKinematics -> Either Result Solution -> Maybe M2Solution
+getM2Solution inp@InputKinematics {..} sol =
     case sol of
         Left _                     -> Nothing
         Right (Solution m2sq ks _) -> do
