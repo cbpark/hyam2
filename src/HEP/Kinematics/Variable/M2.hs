@@ -37,15 +37,15 @@ mkInput as bs ptmiss mInv
               p1 = head ps
               p2 = ps !! 1
 
-              getScale v = let ptv = pt v in ptv * ptv
               m1 = mass p1
               m2 = mass p2
               mInvSq = mInv * mInv
-              scale = sqrt $ (getScale p1 + getScale p2 + getScale ptmiss
-                              + m1 * m1 + m2 * m2 + 2 * mInvSq) / 8.0
-          if scale <= 0  -- why?
+              scaleSq = (getScale p1 + getScale p2 + getScale ptmiss
+                         + m1 * m1 + m2 * m2 + 2 * mInvSq) / 8.0
+          if scaleSq <= 0  -- why?
               then Nothing
-              else do let p1'     = p1        ^/ scale
+              else do let scale = sqrt scaleSq
+                          p1'     = p1        ^/ scale
                           p2'     = p2        ^/ scale
                           q1'     = head bs   ^/ scale
                           q2'     = (bs !! 1) ^/ scale
@@ -60,6 +60,9 @@ mkInput as bs ptmiss mInv
                                                , _scale  = scale
                                                }
 
+getScale :: HasFourMomentum a => a -> Double
+getScale v = let ptv = pt v in ptv
+
 data M2Solution = M2Solution { _M2    :: Double
                              , _k1sol :: FourMomentum
                              , _k2sol :: FourMomentum
@@ -71,9 +74,9 @@ m2SQP (Just inp@InputKinematics {..}) = do
     let objfD = m2ObjF inp
 
         c1fD = constraintA inp
-        c1 = EqualityConstraint (Scalar c1fD) 1e-6
+        c1 = EqualityConstraint (Scalar c1fD) 1e-9
         c2fD = constraintB inp
-        c2 = EqualityConstraint (Scalar c2fD) 1e-6
+        c2 = EqualityConstraint (Scalar c2fD) 1e-9
 
         -- stop = ObjectiveRelativeTolerance 1e-9 :| []
         stop = ObjectiveAbsoluteTolerance 1e-9 :| [MaximumEvaluations 5000]
