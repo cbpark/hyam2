@@ -9,6 +9,7 @@ import HEP.Kinematics.Vector.LorentzVector (setXYZT)
 import Numeric.LinearAlgebra               (Vector, fromList, toList)
 import Numeric.NLOPT
 
+-- | All the components are rescaled by '_scale'.
 data InputKinematics = InputKinematics
                        { _p1     :: FourMomentum  -- ^ p1 = a1 + b1
                        , _p2     :: FourMomentum  -- ^ p2 = a2 + b2
@@ -20,7 +21,10 @@ data InputKinematics = InputKinematics
                        , _scale  :: !Double
                        }
 
--- | creates the input for A1 + A2 --> a1 B1 + a2 B2 --> a1 b1 C1 + a2 b2 C2.
+-- | creates the input for the process of
+--
+--   A1 + A2 --> a1 B1 + a2 B2 --> a1 b1 C1 + a2 b2 C2.
+--
 mkInput :: [FourMomentum]      -- ^ [a1, a2]
         -> [FourMomentum]      -- ^ [b1, b2]
         -> TransverseMomentum  -- ^ pT(miss)
@@ -38,22 +42,23 @@ mkInput as bs ptmiss mInv
               m2 = mass p2
               mInvSq = mInv * mInv
               scale = sqrt $ (getScale p1 + getScale p2 + getScale ptmiss
-                             + m1 * m1 + m2 * m2 + 2 * mInvSq) / 8.0
-
-              p1' = p1 ^/ scale
-              p2' = p2 ^/ scale
-              q1' = head bs ^/ scale
-              q2' = (bs !! 1) ^/ scale
-              ptmiss' = ptmiss ^/ scale
-              mInv' = mInv / scale
-          return $ InputKinematics { _p1 = p1'
-                                   , _p2 = p2'
-                                   , _q1 = q1'
-                                   , _q2 = q2'
-                                   , _ptmiss = ptmiss'
-                                   , _mInvSq = mInv' * mInv'
-                                   , _scale = scale
-                                   }
+                              + m1 * m1 + m2 * m2 + 2 * mInvSq) / 8.0
+          if scale <= 0  -- why?
+              then Nothing
+              else do let p1'     = p1        ^/ scale
+                          p2'     = p2        ^/ scale
+                          q1'     = head bs   ^/ scale
+                          q2'     = (bs !! 1) ^/ scale
+                          ptmiss' = ptmiss    ^/ scale
+                          mInv'   = mInv       / scale
+                      return $ InputKinematics { _p1     = p1'
+                                               , _p2     = p2'
+                                               , _q1     = q1'
+                                               , _q2     = q2'
+                                               , _ptmiss = ptmiss'
+                                               , _mInvSq = mInv' * mInv'
+                                               , _scale  = scale
+                                               }
 
 data M2Solution = M2Solution { _M2    :: Double
                              , _k1sol :: FourMomentum
@@ -82,11 +87,11 @@ m2SQP (Just inp@InputKinematics {..}) = do
         Right (Solution m2sq ks _) -> do
             let m2 = sqrt0 m2sq
                 Invisibles k1 k2 = mkInvisibles inp (vecToVars ks)
-            return $ M2Solution { _M2 = m2 * _scale
+            return $ M2Solution { _M2    = m2  * _scale
                                 , _k1sol = k1 ^* _scale
                                 , _k2sol = k2 ^* _scale }
   where
-    sqrt0 x = if x < 0 then 1.0e+10 else sqrt x
+    sqrt0 x = if x < 0 then 1.0e+20 else sqrt x
 
 -- | (k1x, k1y, k1z, k2z).
 type Variables = (Double, Double, Double, Double)
@@ -98,21 +103,19 @@ mkInvisibles InputKinematics {..} (k1x, k1y, k1z, k2z) = Invisibles k1 k2
   where
     eInv1 = sqrt (k1x * k1x + k1y * k1y + k1z * k1z + _mInvSq)
     k1 = eInv1 `seq` setXYZT k1x k1y k1z eInv1
-    -- k1' = k1 ^/ _scale
+
     k2x = px _ptmiss - k1x
     k2y = py _ptmiss - k1y
     eInv2 = sqrt (k2x * k2x + k2y * k2y + k2z * k2z + _mInvSq)
     k2 = eInv2 `seq` setXYZT k2x k2y k2z eInv2
-    -- k2' = k2 ^/ _scale
 
 -- | the unknowns are (k1x, k2x, k1z, k2z).
 m2ObjF :: InputKinematics -> Vector Double -> (Double, Vector Double)
 m2ObjF inp@InputKinematics {..} ks =
     if m1sq < m2sq then (m2sq, grad2) else (m1sq, grad1)
   where
-    vars = vecToVars ks
-    (m1sq, m2sq, Invisibles k1 k2) = m2ObjF' inp vars
-    (grad1, grad2, _) = m2Grad _p1 _p2 k1 k2 _ptmiss vars
+    (m1sq, m2sq, _) = m2ObjF' inp (vecToVars ks)
+    (grad1, grad2, _) = m2Grad inp _p1 _p2 ks
 
 m2ObjF' :: InputKinematics -> Variables -> (Double, Double, Invisibles)
 m2ObjF' inp@InputKinematics {..} ks = (m1sq, m2sq, invs)
@@ -121,15 +124,16 @@ m2ObjF' inp@InputKinematics {..} ks = (m1sq, m2sq, invs)
     m1sq = invariantMassSq [_p1, k1]
     m2sq = invariantMassSq [_p2, k2]
 
-m2Grad :: FourMomentum  -- ^ p1 (or q1)
+m2Grad :: InputKinematics
+       -> FourMomentum  -- ^ p1 (or q1)
        -> FourMomentum  -- ^ p2 (or q2)
-       -> FourMomentum  -- ^ k1
-       -> FourMomentum  -- ^ k2
-       -> TransverseMomentum
-       -> Variables
+       -> Vector Double
        -> (Vector Double, Vector Double, Double)
-m2Grad p1 p2 k1 k2 ptmiss (k1x, k1y, k1z, k2z) = (d1, d2, deltaMsq)
+m2Grad inp@InputKinematics {..} p1 p2 ks = (d1, d2, deltaMsq)
   where
+    vars@(k1x, k1y, k1z, k2z) = vecToVars ks
+    (_, _, Invisibles k1 k2) = m2ObjF' inp vars
+
     (e1, p1x, p1y, p1z) = epxpypz p1
     r1 = e1 / safeDivisor (energy k1)
     d1 = fromList [ 2 * (r1 * k1x - p1x)
@@ -139,27 +143,28 @@ m2Grad p1 p2 k1 k2 ptmiss (k1x, k1y, k1z, k2z) = (d1, d2, deltaMsq)
 
     (e2, p2x, p2y, p2z) = epxpypz p2
     r2 = e2 / safeDivisor (energy k2)
-    d2 = fromList [ 2 * (r2 * (k1x - px ptmiss) + p2x)
-                  , 2 * (r2 * (k1y - py ptmiss) + p2y)
+    d2 = fromList [ 2 * (r2 * (k1x - px _ptmiss) + p2x)
+                  , 2 * (r2 * (k1y - py _ptmiss) + p2y)
                   , 0
                   , 2 * (r2 * k2z - p2z) ]
 
-    deltaMsq = invariantMassSq [p1 + k1] - invariantMassSq [p2 + k2]
+    deltaMsq = invariantMassSq [p1, k1] - invariantMassSq [p2, k2]
+
+constraintF :: FourMomentum
+            -> FourMomentum
+            -> InputKinematics
+            -> Vector Double
+            -> (Double, Vector Double)
+constraintF p1 p2 inp ks = (deltaMsq, grad1 - grad2)
+  where (grad1, grad2, deltaMsq) = m2Grad inp p1 p2 ks
 
 constraintA :: InputKinematics -> Vector Double -> (Double, Vector Double)
-constraintA inp@InputKinematics {..} ks = (m1sq - m2sq, grad1 - grad2)
-  where
-    vars = vecToVars ks
-    (m1sq, m2sq, Invisibles k1 k2) = m2ObjF' inp vars
-    (grad1, grad2, _) = m2Grad _p1 _p2 k1 k2 _ptmiss vars
+constraintA inp@InputKinematics {..} = constraintF _p1 _p2 inp
 
 constraintB :: InputKinematics -> Vector Double -> (Double, Vector Double)
-constraintB inp@InputKinematics {..} ks = (deltaMsq, grad1 - grad2)
-  where
-    vars = vecToVars ks
-    (_, _, Invisibles k1 k2) = m2ObjF' inp vars
-    (grad1, grad2, deltaMsq) = m2Grad _q1 _q2 k1 k2 _ptmiss vars
+constraintB inp@InputKinematics {..} = constraintF _q1 _q2 inp
 
+-- | unsafe transformation, but it would be fine.
 vecToVars :: Vector Double -> Variables
 vecToVars ks = let [k1x, k1y, k1z, k2z] = toList ks in (k1x, k1y, k1z, k2z)
 
@@ -167,6 +172,3 @@ safeDivisor :: Double -> Double
 safeDivisor x | x >= 0    = max eps x
               | otherwise = min (-eps) x
   where eps = 1.0e-8
-
-badOutput :: (Double, Vector Double)
-badOutput = (1.0e+10, fromList [0,0,0,0])
