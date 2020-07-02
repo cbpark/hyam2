@@ -6,7 +6,8 @@ import           HEP.Data.LHEF
 
 import           Codec.Compression.GZip     (decompress)
 import qualified Data.ByteString.Lazy.Char8 as B
-import           Numeric.LinearAlgebra      (Vector, fromList)
+-- import           Numeric.LinearAlgebra      (Vector, fromList)
+import           Numeric.NLOPT
 import           Pipes
 import           Pipes.ByteString           (fromLazy)
 import qualified Pipes.Prelude              as P
@@ -50,10 +51,9 @@ selectP ev = do
     ofNeutrino  = (`elem` neutrinos)       . idOf
 
 mInv2 :: Maybe ([FourMomentum], [FourMomentum], TransverseMomentum)
-      -> (Double, Vector Double)
-mInv2 = fromMaybe (0, fromList [0,0,0,0]) . mInv2'
+      -> Either Result Solution
+mInv2 = fromMaybe (Left INVALID_ARGS) . mInv2'
   where
     mInv2' ps = do
         (bQuarks, leptons, ptmiss) <- ps
-        return $ objFunc (mkInput bQuarks leptons ptmiss 0)
-            (fromList [px ptmiss, py ptmiss, 0, 0])
+        return $ m2SQP (mkInput bQuarks leptons ptmiss 0)
