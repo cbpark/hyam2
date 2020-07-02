@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: aaeb9d6d74b594401634ab385eb3967e9a060d9f75a3c700f35a746129292639
+-- hash: e77bcc74950cf0f7893d47013253dd2158f88c959d661ef6fb0e21146db895c5
 
 name:           hyam2
 version:        0.0.0.0
@@ -37,5 +37,6 @@ executable hyam2
     , hmatrix-nlopt
     , pipes
     , pipes-bytestring
+    , transformers
     , zlib
   default-language: Haskell2010

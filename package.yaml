@@ -15,6 +15,7 @@ dependencies:
   - hmatrix-nlopt
   - pipes
   - pipes-bytestring
+  - transformers
   - zlib
   - hep-utilities
 

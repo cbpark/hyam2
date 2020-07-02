@@ -5,6 +5,7 @@ module HEP.Kinematics.Variable.M2 where
 import HEP.Kinematics
 import HEP.Kinematics.Vector.LorentzVector (setXYZT)
 
+-- import Control.Monad.Trans.State.Strict
 import Numeric.LinearAlgebra               (Vector, fromList, toList)
 import Numeric.NLOPT
 
@@ -36,9 +37,14 @@ mkInput as bs ptmiss mInv
                                    , _mInvSq = mInv * mInv
                                    }
 
-m2SQP :: Maybe InputKinematics -> Either Result Solution
-m2SQP Nothing                         = Left INVALID_ARGS
-m2SQP (Just inp@InputKinematics {..}) =
+data M2Solution = M2Solution { _M2    :: Double
+                             , _k1sol :: FourMomentum
+                             , _k2sol :: FourMomentum
+                             } deriving Show
+
+m2SQP :: Maybe InputKinematics -> Maybe M2Solution
+m2SQP Nothing                         = Nothing
+m2SQP (Just inp@InputKinematics {..}) = do
     let objfD = m2ObjF inp
 
         c1fD = constraintA inp
@@ -46,13 +52,24 @@ m2SQP (Just inp@InputKinematics {..}) =
         c2fD = constraintB inp
         c2 = EqualityConstraint (Scalar c2fD) 1e-6
 
-        stop = ObjectiveRelativeTolerance 1e-9 :| []
+        -- stop = ObjectiveRelativeTolerance 1e-9 :| []
+        stop = ObjectiveRelativeTolerance 1e-9 :| [MaximumEvaluations 5000]
         algorithm = SLSQP objfD [] [] [c1, c2]
         problem = LocalProblem 4 stop algorithm
 
         x0 = fromList [0.5 * px _ptmiss, 0.5 * py _ptmiss, 0, 0]
         sol = minimizeLocal problem x0
-    in sol
+    case sol of
+        Left _                     -> Nothing
+        Right (Solution m2sq ks _) -> do let m2 = sqrt0 m2sq
+                                             [k1x, k1y, k1z, k2z] = toList ks
+                                             var = (k1x, k1y, k1z, k2z)
+                                             Invisibles k1 k2 = mkInvisibles inp var
+                                         return $ M2Solution { _M2 = m2
+                                                             , _k1sol = k1
+                                                             , _k2sol = k2 }
+  where
+    sqrt0 x = if x < 0 then 1.0e+10 else sqrt x
 
 -- | (k1x, k1y, k1z, k2z).
 type Variables = (Double, Double, Double, Double)
