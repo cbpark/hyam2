@@ -85,7 +85,8 @@ m2SQP (Just inp@InputKinematics {..}) =
         eps2 = 1e-6 * _scale
         -- eps2 = 1e-9
         -- stop = ObjectiveRelativeTolerance 1e-9 :| []
-        stop = ObjectiveAbsoluteTolerance eps2 :| [ObjectiveRelativeTolerance eps2]
+        stop = ObjectiveAbsoluteTolerance eps2
+               :| [ObjectiveRelativeTolerance eps2, MaximumEvaluations 100]
         algorithm = SLSQP objfD [] [] [c1, c2]
         problem = LocalProblem 4 stop algorithm
 
@@ -97,7 +98,7 @@ m2SQP (Just inp@InputKinematics {..}) =
 getM2Solution :: InputKinematics -> Either Result Solution -> Maybe M2Solution
 getM2Solution inp@InputKinematics {..} sol =
     case sol of
-        Left _                     -> Nothing
+        Left _                   -> Nothing
         Right (Solution m2 ks _) -> do
             let Invisibles k1 k2 = mkInvisibles inp (vecToVars ks)
             return $ M2Solution { _M2    = m2  * _scale
@@ -125,41 +126,38 @@ m2ObjF :: InputKinematics -> Vector Double -> (Double, Vector Double)
 m2ObjF inp@InputKinematics {..} ks =
     if m1 < m2 then (m2, grad2) else (m1, grad1)
   where
-    (m1, m2, _) = m2ObjF' inp (vecToVars ks)
-    (grad1, grad2, _) = m2Grad inp _p1 _p2 ks
-
-m2ObjF' :: InputKinematics -> Variables -> (Double, Double, Invisibles)
-m2ObjF' inp@InputKinematics {..} ks = (m1, m2, invs)
-  where
-    invs@(Invisibles k1 k2) = mkInvisibles inp ks
+    invs@(Invisibles k1 k2) = mkInvisibles inp (vecToVars ks)
     m1 = invariantMass [_p1, k1]
     m2 = invariantMass [_p2, k2]
+    (grad1, grad2, _) = m2Grad inp invs _p1 _p2 ks
 
 m2Grad :: InputKinematics
+       -> Invisibles
        -> FourMomentum  -- ^ p1 (or q1)
        -> FourMomentum  -- ^ p2 (or q2)
        -> Vector Double
        -> (Vector Double, Vector Double, Double)
-m2Grad inp@InputKinematics {..} p1 p2 ks = (d1, d2, m1 - m2)
+m2Grad InputKinematics {..} (Invisibles k1 k2) p1 p2 ks = (d1, d2, m1 - m2)
   where
-    vars@(k1x, k1y, k1z, k2z) = vecToVars ks
-    (_, _, Invisibles k1 k2) = m2ObjF' inp vars
+    (k1x, k1y, k1z, k2z) = vecToVars ks
 
     (e1, p1x, p1y, p1z) = epxpypz p1
-    m1 = invariantMass [p1, k1]
+    m1  = invariantMass [p1, k1]
+    m1' = safeDivisor m1
     r1 = e1 / safeDivisor (energy k1)
-    d1 = fromList $ ( / (2 * m1)) <$> [ 2 * (r1 * k1x - p1x)
-                                      , 2 * (r1 * k1y - p1y)
-                                      , 2 * (r1 * k1z - p1z)
-                                      , 0 ]
+    d1 = fromList $ ( / m1') <$> [ r1 * k1x - p1x
+                                 , r1 * k1y - p1y
+                                 , r1 * k1z - p1z
+                                 , 0 ]
 
     (e2, p2x, p2y, p2z) = epxpypz p2
-    m2 = invariantMass [p2, k2]
+    m2  = invariantMass [p2, k2]
+    m2' = safeDivisor m2
     r2 = e2 / safeDivisor (energy k2)
-    d2 = fromList $ ( / (2 * m2)) <$> [ 2 * (r2 * (k1x - px _ptmiss) + p2x)
-                                      , 2 * (r2 * (k1y - py _ptmiss) + p2y)
-                                      , 0
-                                      , 2 * (r2 * k2z - p2z) ]
+    d2 = fromList $ ( / m2') <$> [ r2 * (k1x - px _ptmiss) + p2x
+                                 , r2 * (k1y - py _ptmiss) + p2y
+                                 , 0
+                                 , r2 * k2z - p2z ]
 
 constraintF :: FourMomentum
             -> FourMomentum
@@ -167,7 +165,9 @@ constraintF :: FourMomentum
             -> Vector Double
             -> (Double, Vector Double)
 constraintF p1 p2 inp ks = (deltaM, grad1 - grad2)
-  where (grad1, grad2, deltaM) = m2Grad inp p1 p2 ks
+  where
+    invs = mkInvisibles inp (vecToVars ks)
+    (grad1, grad2, deltaM) = m2Grad inp invs p1 p2 ks
 
 constraintA, constraintB
     :: InputKinematics -> Vector Double -> (Double, Vector Double)
