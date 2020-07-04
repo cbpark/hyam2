@@ -78,8 +78,6 @@ getM2Solution inp@InputKinematics {..} sol =
                                 , _k1sol = k1 ^* _scale
                                 , _k2sol = k2 ^* _scale }
 
-type MultivarFunc = Vector Double -> (Double, Vector Double)
-
 initialGuess :: InputKinematics -> Vector Double
 initialGuess InputKinematics { _ptmiss = ptmiss } =
     fromList [0.5 * px ptmiss, 0.5 * py ptmiss, 0, 0]
@@ -91,6 +89,8 @@ stopObjCond :: [StoppingCondition]
 stopObjCond =
     [ObjectiveAbsoluteTolerance eps', ObjectiveRelativeTolerance eps']
   where eps' = eps * 1e-2
+
+type MultivarFunc = Vector Double -> (Double, Vector Double)
 
 m2SQP :: [InputKinematics -> MultivarFunc]  -- ^ constraint functions
       -> Maybe InputKinematics
