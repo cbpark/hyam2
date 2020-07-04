@@ -45,7 +45,7 @@ mkInput as bs ptmiss mInv
                         + m1 * m1 + m2 * m2 + 2 * mInvSq
           if scaleSq <= 0  -- why?
               then Nothing
-              else do let scale = trace ("scale = " ++ show (sqrt scaleSq)) sqrt scaleSq
+              else do let scale = sqrt scaleSq
                           p1'     = p1        ^/ scale
                           p2'     = p2        ^/ scale
                           q1'     = head bs   ^/ scale
@@ -75,15 +75,14 @@ m2SQP (Just inp@InputKinematics {..}) =
     let -- objective function with gradient
         objfD = m2ObjF inp
 
-        eps1 = 1e-3 * _scale
+        eps1 = 1e-2 -- 1e-3 * _scale
         -- constraint function with gradient
         c1fD = constraintA inp
         c1 = EqualityConstraint (Scalar c1fD) eps1
         c2fD = constraintB inp
         c2 = EqualityConstraint (Scalar c2fD) eps1
 
-        eps2 = 1e-6 * _scale
-        -- eps2 = 1e-9
+        eps2 = eps1 * 1e-2 -- 1e-6 * _scale
         -- stop = ObjectiveRelativeTolerance 1e-9 :| []
         stop = ObjectiveAbsoluteTolerance eps2
                :| [ObjectiveRelativeTolerance eps2, MaximumEvaluations 100]
@@ -95,12 +94,45 @@ m2SQP (Just inp@InputKinematics {..}) =
         sol = minimizeLocal problem x0
     in getM2Solution inp sol
 
+m2AugLag :: Maybe InputKinematics -> Maybe M2Solution
+m2AugLag Nothing                         = Nothing
+m2AugLag (Just inp@InputKinematics {..}) =
+    let objfD = m2ObjF inp
+        objf  = getResultOnly objfD
+
+        eps1 = 1e-2
+        c1fD = constraintA inp
+        c1f  = getResultOnly c1fD
+        c1 = EqualityConstraint (Scalar c1f) eps1
+        c2fD = constraintA inp
+        c2f  = getResultOnly c2fD
+        c2 = EqualityConstraint (Scalar c2f) eps1
+
+        eps2 = eps1 * 1e-2
+        stop = ObjectiveAbsoluteTolerance eps2
+               :| [ObjectiveRelativeTolerance eps2, MaximumEvaluations 5000]
+        algorithm = NELDERMEAD objf [] Nothing
+
+        subproblem = LocalProblem 4 stop algorithm
+        problem = AugLagProblem [c1, c2] [] (AUGLAG_EQ_LOCAL subproblem)
+
+        -- initial guess
+        x0 = fromList [0.5 * px _ptmiss, 0.5 * py _ptmiss, 0, 0]
+        sol = minimizeAugLag problem x0
+    in getM2Solution inp sol
+
+getResultOnly :: (Vector Double -> (Double, Vector Double))
+              -> Vector Double
+              -> Double
+getResultOnly fD ks = let (result, _) = fD ks in result
+
 getM2Solution :: InputKinematics -> Either Result Solution -> Maybe M2Solution
 getM2Solution inp@InputKinematics {..} sol =
     case sol of
-        Left _                   -> Nothing
-        Right (Solution m2 ks _) -> do
+        Left _                          -> Nothing
+        sol0@(Right (Solution m2 ks _)) -> do
             let Invisibles k1 k2 = mkInvisibles inp (vecToVars ks)
+            traceM ("sol = " ++ show sol0)
             return $ M2Solution { _M2    = m2  * _scale
                                 , _k1sol = k1 ^* _scale
                                 , _k2sol = k2 ^* _scale }
