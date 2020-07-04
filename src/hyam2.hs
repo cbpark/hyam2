@@ -58,4 +58,8 @@ mInv2 = -- fromMaybe (Left INVALID_ARGS) . mInv2'
     mInv2' ps = do
         (bQuarks, leptons, ptmiss) <- ps
         -- m2SQP (mkInput bQuarks leptons ptmiss 0)
-        m2AugLag (mkInput bQuarks leptons ptmiss 0)
+        -- m2XXSQP (mkInput bQuarks leptons ptmiss 0)
+        -- m2CXSQP (mkInput bQuarks leptons ptmiss 0)
+        -- m2XCSQP (mkInput bQuarks leptons ptmiss 0)
+        m2CCSQP (mkInput bQuarks leptons ptmiss 0)
+        -- m2AugLag (mkInput bQuarks leptons ptmiss 0)

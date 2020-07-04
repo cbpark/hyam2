@@ -69,30 +69,39 @@ data M2Solution = M2Solution { _M2    :: Double
                              , _k2sol :: FourMomentum
                              } deriving Show
 
-m2SQP :: Maybe InputKinematics -> Maybe M2Solution
-m2SQP Nothing                         = Nothing
-m2SQP (Just inp@InputKinematics {..}) =
+type MultivarFunc = Vector Double -> (Double, Vector Double)
+
+m2SQP :: [InputKinematics -> MultivarFunc]  -- ^ constraint functions
+      -> Maybe InputKinematics
+      -> Maybe M2Solution
+m2SQP _   Nothing                         = Nothing
+m2SQP cfs (Just inp@InputKinematics {..}) =
     let -- objective function with gradient
         objfD = m2ObjF inp
 
         eps1 = 1e-2 -- 1e-3 * _scale
         -- constraint function with gradient
-        c1fD = constraintA inp
-        c1 = EqualityConstraint (Scalar c1fD) eps1
-        c2fD = constraintB inp
-        c2 = EqualityConstraint (Scalar c2fD) eps1
+        constraints' = ($ inp) <$> cfs
+        constraints  = (\cf -> EqualityConstraint (Scalar cf) eps1)
+                       <$> constraints'
 
         eps2 = eps1 * 1e-2 -- 1e-6 * _scale
         -- stop = ObjectiveRelativeTolerance 1e-9 :| []
         stop = ObjectiveAbsoluteTolerance eps2
                :| [ObjectiveRelativeTolerance eps2, MaximumEvaluations 100]
-        algorithm = SLSQP objfD [] [] [c1, c2]
+        algorithm = SLSQP objfD [] [] constraints
         problem = LocalProblem 4 stop algorithm
 
         -- initial guess
         x0 = fromList [0.5 * px _ptmiss, 0.5 * py _ptmiss, 0, 0]
         sol = minimizeLocal problem x0
     in getM2Solution inp sol
+
+m2XXSQP, m2CXSQP, m2XCSQP, m2CCSQP :: Maybe InputKinematics -> Maybe M2Solution
+m2XXSQP = m2SQP []
+m2CXSQP = m2SQP [constraintA]
+m2XCSQP = m2SQP [constraintB]
+m2CCSQP = m2SQP [constraintA, constraintB]
 
 m2AugLag :: Maybe InputKinematics -> Maybe M2Solution
 m2AugLag Nothing                         = Nothing
@@ -121,9 +130,7 @@ m2AugLag (Just inp@InputKinematics {..}) =
         sol = minimizeAugLag problem x0
     in getM2Solution inp sol
 
-getResultOnly :: (Vector Double -> (Double, Vector Double))
-              -> Vector Double
-              -> Double
+getResultOnly :: MultivarFunc -> Vector Double -> Double
 getResultOnly fD ks = let (result, _) = fD ks in result
 
 getM2Solution :: InputKinematics -> Either Result Solution -> Maybe M2Solution
@@ -154,7 +161,7 @@ mkInvisibles InputKinematics {..} (k1x, k1y, k1z, k2z) = Invisibles k1 k2
     k2 = eInv2 `seq` setXYZT k2x k2y k2z eInv2
 
 -- | the unknowns are (k1x, k2x, k1z, k2z).
-m2ObjF :: InputKinematics -> Vector Double -> (Double, Vector Double)
+m2ObjF :: InputKinematics -> MultivarFunc
 m2ObjF inp@InputKinematics {..} ks =
     if m1 < m2 then (m2, grad2) else (m1, grad1)
   where
@@ -201,8 +208,7 @@ constraintF p1 p2 inp ks = (deltaM, grad1 - grad2)
     invs = mkInvisibles inp (vecToVars ks)
     (grad1, grad2, deltaM) = m2Grad inp invs p1 p2 ks
 
-constraintA, constraintB
-    :: InputKinematics -> Vector Double -> (Double, Vector Double)
+constraintA, constraintB :: InputKinematics -> MultivarFunc
 constraintA inp@InputKinematics {..} = constraintF _p1 _p2 inp
 constraintB inp@InputKinematics {..} = constraintF _q1 _q2 inp
 
