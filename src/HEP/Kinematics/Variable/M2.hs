@@ -19,8 +19,7 @@ data InputKinematics = InputKinematics
                        , _ptmiss :: TransverseMomentum
                          -- | squared mass of the invisible particle
                        , _mInvSq :: !Double
-                       , _scale  :: !Double
-                       }
+                       , _scale  :: !Double }
 
 -- | creates the input for the process of
 --
@@ -58,16 +57,26 @@ mkInput as bs ptmiss mInv
                                                , _q2     = q2'
                                                , _ptmiss = ptmiss'
                                                , _mInvSq = mInv' * mInv'
-                                               , _scale  = scale
-                                               }
-
-getScale :: HasFourMomentum a => a -> Double
-getScale v = let ptv = pt v in ptv
+                                               , _scale  = scale }
+  where
+    getScale :: HasFourMomentum a => a -> Double
+    getScale v = let ptv = pt v in ptv
 
 data M2Solution = M2Solution { _M2    :: Double
                              , _k1sol :: FourMomentum
                              , _k2sol :: FourMomentum
                              } deriving Show
+
+getM2Solution :: InputKinematics -> Either Result Solution -> Maybe M2Solution
+getM2Solution inp@InputKinematics {..} sol =
+    case sol of
+        Left _                          -> Nothing
+        sol0@(Right (Solution m2 ks _)) -> do
+            let Invisibles k1 k2 = mkInvisibles inp (vecToVars ks)
+            traceM ("sol = " ++ show sol0)
+            return $ M2Solution { _M2    = m2  * _scale
+                                , _k1sol = k1 ^* _scale
+                                , _k2sol = k2 ^* _scale }
 
 type MultivarFunc = Vector Double -> (Double, Vector Double)
 
@@ -77,6 +86,11 @@ initialGuess InputKinematics { _ptmiss = ptmiss } =
 
 eps :: Double
 eps = 1e-2  -- 1e-3 * _scale
+
+stopObjCond :: [StoppingCondition]
+stopObjCond =
+    [ObjectiveAbsoluteTolerance eps', ObjectiveRelativeTolerance eps']
+  where eps' = eps * 1e-2
 
 m2SQP :: [InputKinematics -> MultivarFunc]  -- ^ constraint functions
       -> Maybe InputKinematics
@@ -91,9 +105,7 @@ m2SQP cfs (Just inp@InputKinematics {..}) =
         constraints  = (\cf -> EqualityConstraint (Scalar cf) eps)
                        <$> constraints'
 
-        eps' = eps * 1e-2 -- 1e-6 * _scale
-        stop = ObjectiveAbsoluteTolerance eps'
-               :| [ObjectiveRelativeTolerance eps', MaximumEvaluations 100]
+        stop = MaximumEvaluations 100 :| stopObjCond
         algorithm = SLSQP objfD [] [] constraints
         problem = LocalProblem 4 stop algorithm
 
@@ -106,43 +118,38 @@ m2CXSQP = m2SQP [constraintA]
 m2XCSQP = m2SQP [constraintB]
 m2CCSQP = m2SQP [constraintA, constraintB]
 
-m2AugLag :: Maybe InputKinematics -> Maybe M2Solution
-m2AugLag Nothing                         = Nothing
-m2AugLag (Just inp@InputKinematics {..}) =
-    let objfD = m2ObjF inp
-        objf  = getResultOnly objfD
+m2AugLag :: [InputKinematics -> MultivarFunc]  -- ^ constraint functions
+         -> Maybe InputKinematics
+         -> Maybe M2Solution
+m2AugLag _   Nothing                         = Nothing
+m2AugLag cfs (Just inp@InputKinematics {..}) =
+    let -- objective function without gradient
+        objf  = getResultOnly (m2ObjF inp)
 
-        c1fD = constraintA inp
-        c1f  = getResultOnly c1fD
-        c1 = EqualityConstraint (Scalar c1f) eps
-        c2fD = constraintA inp
-        c2f  = getResultOnly c2fD
-        c2 = EqualityConstraint (Scalar c2f) eps
+        -- constraint function without gradient
+        constraints' = ($ inp) <$> cfs
+        constraints  = (\cf -> EqualityConstraint (Scalar (getResultOnly cf))
+                               eps)
+                       <$> constraints'
 
-        eps' = eps * 1e-2
-        stop = ObjectiveAbsoluteTolerance eps'
-               :| [ObjectiveRelativeTolerance eps', MaximumEvaluations 5000]
+        stop = MaximumEvaluations 5000 :| stopObjCond
         algorithm = NELDERMEAD objf [] Nothing
 
         subproblem = LocalProblem 4 stop algorithm
-        problem = AugLagProblem [c1, c2] [] (AUGLAG_EQ_LOCAL subproblem)
+        problem = AugLagProblem constraints [] (AUGLAG_EQ_LOCAL subproblem)
 
         sol = minimizeAugLag problem (initialGuess inp)
     in getM2Solution inp sol
+  where
+    getResultOnly :: MultivarFunc -> Vector Double -> Double
+    getResultOnly fD ks = let (result, _) = fD ks in result
 
-getResultOnly :: MultivarFunc -> Vector Double -> Double
-getResultOnly fD ks = let (result, _) = fD ks in result
-
-getM2Solution :: InputKinematics -> Either Result Solution -> Maybe M2Solution
-getM2Solution inp@InputKinematics {..} sol =
-    case sol of
-        Left _                          -> Nothing
-        sol0@(Right (Solution m2 ks _)) -> do
-            let Invisibles k1 k2 = mkInvisibles inp (vecToVars ks)
-            traceM ("sol = " ++ show sol0)
-            return $ M2Solution { _M2    = m2  * _scale
-                                , _k1sol = k1 ^* _scale
-                                , _k2sol = k2 ^* _scale }
+m2XXAugLag, m2CXAugLag, m2XCAugLag, m2CCAugLag
+    :: Maybe InputKinematics -> Maybe M2Solution
+m2XXAugLag = m2AugLag []
+m2CXAugLag = m2AugLag [constraintA]
+m2XCAugLag = m2AugLag [constraintB]
+m2CCAugLag = m2AugLag [constraintA, constraintB]
 
 -- | (k1x, k1y, k1z, k2z).
 type Variables = (Double, Double, Double, Double)
