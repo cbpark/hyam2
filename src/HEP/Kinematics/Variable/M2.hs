@@ -71,6 +71,13 @@ data M2Solution = M2Solution { _M2    :: Double
 
 type MultivarFunc = Vector Double -> (Double, Vector Double)
 
+initialGuess :: InputKinematics -> Vector Double
+initialGuess InputKinematics { _ptmiss = ptmiss } =
+    fromList [0.5 * px ptmiss, 0.5 * py ptmiss, 0, 0]
+
+eps :: Double
+eps = 1e-2  -- 1e-3 * _scale
+
 m2SQP :: [InputKinematics -> MultivarFunc]  -- ^ constraint functions
       -> Maybe InputKinematics
       -> Maybe M2Solution
@@ -79,22 +86,18 @@ m2SQP cfs (Just inp@InputKinematics {..}) =
     let -- objective function with gradient
         objfD = m2ObjF inp
 
-        eps1 = 1e-2 -- 1e-3 * _scale
         -- constraint function with gradient
         constraints' = ($ inp) <$> cfs
-        constraints  = (\cf -> EqualityConstraint (Scalar cf) eps1)
+        constraints  = (\cf -> EqualityConstraint (Scalar cf) eps)
                        <$> constraints'
 
-        eps2 = eps1 * 1e-2 -- 1e-6 * _scale
-        -- stop = ObjectiveRelativeTolerance 1e-9 :| []
-        stop = ObjectiveAbsoluteTolerance eps2
-               :| [ObjectiveRelativeTolerance eps2, MaximumEvaluations 100]
+        eps' = eps * 1e-2 -- 1e-6 * _scale
+        stop = ObjectiveAbsoluteTolerance eps'
+               :| [ObjectiveRelativeTolerance eps', MaximumEvaluations 100]
         algorithm = SLSQP objfD [] [] constraints
         problem = LocalProblem 4 stop algorithm
 
-        -- initial guess
-        x0 = fromList [0.5 * px _ptmiss, 0.5 * py _ptmiss, 0, 0]
-        sol = minimizeLocal problem x0
+        sol = minimizeLocal problem (initialGuess inp)
     in getM2Solution inp sol
 
 m2XXSQP, m2CXSQP, m2XCSQP, m2CCSQP :: Maybe InputKinematics -> Maybe M2Solution
@@ -109,25 +112,22 @@ m2AugLag (Just inp@InputKinematics {..}) =
     let objfD = m2ObjF inp
         objf  = getResultOnly objfD
 
-        eps1 = 1e-2
         c1fD = constraintA inp
         c1f  = getResultOnly c1fD
-        c1 = EqualityConstraint (Scalar c1f) eps1
+        c1 = EqualityConstraint (Scalar c1f) eps
         c2fD = constraintA inp
         c2f  = getResultOnly c2fD
-        c2 = EqualityConstraint (Scalar c2f) eps1
+        c2 = EqualityConstraint (Scalar c2f) eps
 
-        eps2 = eps1 * 1e-2
-        stop = ObjectiveAbsoluteTolerance eps2
-               :| [ObjectiveRelativeTolerance eps2, MaximumEvaluations 5000]
+        eps' = eps * 1e-2
+        stop = ObjectiveAbsoluteTolerance eps'
+               :| [ObjectiveRelativeTolerance eps', MaximumEvaluations 5000]
         algorithm = NELDERMEAD objf [] Nothing
 
         subproblem = LocalProblem 4 stop algorithm
         problem = AugLagProblem [c1, c2] [] (AUGLAG_EQ_LOCAL subproblem)
 
-        -- initial guess
-        x0 = fromList [0.5 * px _ptmiss, 0.5 * py _ptmiss, 0, 0]
-        sol = minimizeAugLag problem x0
+        sol = minimizeAugLag problem (initialGuess inp)
     in getM2Solution inp sol
 
 getResultOnly :: MultivarFunc -> Vector Double -> Double
@@ -217,6 +217,6 @@ vecToVars :: Vector Double -> Variables
 vecToVars ks = let [k1x, k1y, k1z, k2z] = toList ks in (k1x, k1y, k1z, k2z)
 
 safeDivisor :: Double -> Double
-safeDivisor x | x >= 0    = max eps x
-              | otherwise = min (-eps) x
-  where eps = 1.0e-8
+safeDivisor x | x >= 0    = max eps0 x
+              | otherwise = min (-eps0) x
+  where eps0 = 1.0e-8
