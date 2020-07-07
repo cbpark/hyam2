@@ -1,6 +1,21 @@
 {-# LANGUAGE RecordWildCards #-}
 
-module HEP.Kinematics.Variable.M2 where
+module HEP.Kinematics.Variable.M2
+    (
+      M2Solution (..)
+
+    , mkInput
+
+    , m2XXSQP
+    , m2CXSQP
+    , m2XCSQP
+    , m2CCSQP
+
+    , m2XXAugLag
+    , m2CXAugLag
+    , m2XCAugLag
+    , m2CCAugLag
+    ) where
 
 import HEP.Kinematics
 import HEP.Kinematics.Vector.LorentzVector (setXYZT)
@@ -8,7 +23,8 @@ import HEP.Kinematics.Vector.LorentzVector (setXYZT)
 import Numeric.LinearAlgebra               (Vector, fromList, toList)
 import Numeric.NLOPT
 
-import Debug.Trace
+-- import Numeric.GSL.Differentiation
+-- import Debug.Trace
 
 -- | All the components are rescaled by '_scale'.
 data InputKinematics = InputKinematics
@@ -70,10 +86,11 @@ data M2Solution = M2Solution { _M2    :: Double
 getM2Solution :: InputKinematics -> Either Result Solution -> Maybe M2Solution
 getM2Solution inp@InputKinematics {..} sol =
     case sol of
-        Left _                          -> Nothing
-        sol0@(Right (Solution m2 ks _)) -> do
+        Left _                   -> Nothing
+        -- sol0@(Right (Solution m2 ks _)) -> do
+        Right (Solution m2 ks _) -> do
             let Invisibles k1 k2 = mkInvisibles inp (vecToVars ks)
-            traceM ("sol = " ++ show sol0)
+            -- traceM ("sol = " ++ show sol0)
             return $ M2Solution { _M2    = m2  * _scale
                                 , _k1sol = k1 ^* _scale
                                 , _k2sol = k2 ^* _scale }
@@ -81,13 +98,25 @@ getM2Solution inp@InputKinematics {..} sol =
 initialGuess :: InputKinematics -> Vector Double
 initialGuess InputKinematics { _ptmiss = ptmiss } =
     fromList [0.5 * px ptmiss, 0.5 * py ptmiss, 0, 0]
+{-
+initialGuess inp@InputKinematics {..} =
+    let objf ks = let Invisibles k1 k2 = mkInvisibles inp (vecToVars ks)
+                  in invariantMass [_p1, _p2, k1, k2]
+        ks0 = fromList [0.5 * px _ptmiss, 0.5 * py _ptmiss, 0, 0]
+        stop = MaximumEvaluations 100 :| stopObjCond
+        algorithm = NELDERMEAD objf [] Nothing
+        problem = LocalProblem 4 stop algorithm
+        sol = minimizeLocal problem ks0
+    in case sol of
+        Left _                     -> ks0
+        Right (Solution _ ksSol _) -> ksSol
+-}
 
 eps :: Double
 eps = 1e-2  -- 1e-3 * _scale
 
 stopObjCond :: [StoppingCondition]
-stopObjCond =
-    [ObjectiveAbsoluteTolerance eps', ObjectiveRelativeTolerance eps']
+stopObjCond = [ObjectiveAbsoluteTolerance eps', ObjectiveRelativeTolerance eps']
   where eps' = eps * 1e-2
 
 type MultivarFunc = Vector Double -> (Double, Vector Double)
@@ -124,18 +153,24 @@ m2AugLag :: [InputKinematics -> MultivarFunc]  -- ^ constraint functions
 m2AugLag _   Nothing                         = Nothing
 m2AugLag cfs (Just inp@InputKinematics {..}) =
     let -- objective function without gradient
+        -- objf  = m2ObjF inp
         objf  = getResultOnly (m2ObjF inp)
 
         -- constraint function without gradient
         constraints' = ($ inp) <$> cfs
+        -- constraints  = (\cf -> EqualityConstraint (Scalar cf) eps)
+        --                <$> constraints'
         constraints  = (\cf -> EqualityConstraint (Scalar (getResultOnly cf))
-                               eps)
-                       <$> constraints'
+                               eps) <$> constraints'
 
         stop = MaximumEvaluations 5000 :| stopObjCond
+        -- algorithm = VAR1 objf Nothing
+        -- algorithm = LBFGS objf Nothing
+        -- algorithm = SLSQP objf [] [] constraints
         algorithm = NELDERMEAD objf [] Nothing
 
         subproblem = LocalProblem 4 stop algorithm
+        -- problem = AugLagProblem [] constraints (AUGLAG_EQ_LOCAL subproblem)
         problem = AugLagProblem constraints [] (AUGLAG_EQ_LOCAL subproblem)
 
         sol = minimizeAugLag problem (initialGuess inp)
@@ -153,6 +188,10 @@ m2CCAugLag = m2AugLag [constraintA, constraintB]
 
 -- | (k1x, k1y, k1z, k2z).
 type Variables = (Double, Double, Double, Double)
+
+-- | unsafe transformation, but it would be fine.
+vecToVars :: Vector Double -> Variables
+vecToVars ks = let [k1x, k1y, k1z, k2z] = toList ks in (k1x, k1y, k1z, k2z)
 
 data Invisibles = Invisibles { _k1 :: FourMomentum , _k2 :: FourMomentum }
 
@@ -219,11 +258,65 @@ constraintA, constraintB :: InputKinematics -> MultivarFunc
 constraintA inp@InputKinematics {..} = constraintF _p1 _p2 inp
 constraintB inp@InputKinematics {..} = constraintF _q1 _q2 inp
 
--- | unsafe transformation, but it would be fine.
-vecToVars :: Vector Double -> Variables
-vecToVars ks = let [k1x, k1y, k1z, k2z] = toList ks in (k1x, k1y, k1z, k2z)
-
 safeDivisor :: Double -> Double
 safeDivisor x | x >= 0    = max eps0 x
               | otherwise = min (-eps0) x
   where eps0 = 1.0e-8
+
+{-
+m2ObjF :: InputKinematics -> MultivarFunc
+m2ObjF inp ks = (m, d)
+  where
+    ks0 = vecToVars ks
+    m = fst $ m2ObjF' inp ks0
+    d = m2ObjFDNumeric inp ks0
+
+m2ObjF' :: InputKinematics -> Variables -> (Double, Vector Double)
+m2ObjF' inp@InputKinematics {..} ks =
+    if m1 < m2 then (m2, grad2) else (m1, grad1)
+  where
+    invs@(Invisibles k1 k2) = mkInvisibles inp ks
+    m1 = invariantMass [_p1, k1]
+    m2 = invariantMass [_p2, k2]
+    (k1x, k1y, k1z, k2z) = ks
+    (grad1, grad2, _) = m2Grad inp invs _p1 _p2 (fromList [k1x, k1y, k1z, k2z])
+
+m2ObjFDNumeric :: InputKinematics -> Variables -> Vector Double
+m2ObjFDNumeric inp@InputKinematics {..} = fDNumeric f
+  where f ks = fst (m2ObjF' inp ks)
+
+m2GradNumeric :: InputKinematics
+              -> Invisibles
+              -> FourMomentum  -- ^ p1 (or q1)
+              -> FourMomentum  -- ^ p2 (or q2)
+              -> Vector Double
+              -> (Vector Double, Vector Double, Double)
+m2GradNumeric inp@(InputKinematics {..}) _ p1 p2 ks = (d1, d2, m1 - m2)
+  where
+    ks0 = vecToVars ks
+
+    m1F ks' = let Invisibles k1 _ = mkInvisibles inp ks'
+              in invariantMass [p1, k1]
+    m1 = m1F ks0
+    d1 = fDNumeric m1F ks0
+
+    m2F ks' = let Invisibles _ k2 = mkInvisibles inp ks'
+              in invariantMass [p2, k2]
+    m2 = m2F ks0
+    d2 = fDNumeric m2F ks0
+
+fDNumeric :: (Variables -> Double) -> Variables -> Vector Double
+fDNumeric f (k1x, k1y, k1z, k2z) = fromList [fk1xD, fk1yD, fk1zD, fk2zD]
+  where
+    fk1x a = f (a, k1y, k1z, k2z)
+    fk1y a = f (k1x, a, k1z, k2z)
+    fk1z a = f (k1x, k1y, a, k2z)
+    fk2z a = f (k1x, k1y, k1z, a)
+
+    epsN = 1e-8
+
+    fk1xD = fst $ derivCentral epsN fk1x k1x
+    fk1yD = fst $ derivCentral epsN fk1y k1y
+    fk1zD = fst $ derivCentral epsN fk1z k1z
+    fk2zD = fst $ derivCentral epsN fk2z k2z
+-}

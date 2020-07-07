@@ -6,8 +6,6 @@ import           HEP.Data.LHEF
 
 import           Codec.Compression.GZip     (decompress)
 import qualified Data.ByteString.Lazy.Char8 as B
--- import           Numeric.LinearAlgebra      (Vector, fromList)
--- import           Numeric.NLOPT
 import           Pipes
 import           Pipes.ByteString           (fromLazy)
 import qualified Pipes.Prelude              as P
@@ -61,8 +59,8 @@ mInv2 = -- fromMaybe (Left INVALID_ARGS) . mInv2'
         -- m2XXSQP (mkInput bQuarks leptons ptmiss 0)
         -- m2CXSQP (mkInput bQuarks leptons ptmiss 0)
         -- m2XCSQP (mkInput bQuarks leptons ptmiss 0)
-        m2CCSQP (mkInput bQuarks leptons ptmiss 0)
+        -- m2CCSQP (mkInput bQuarks leptons ptmiss 0)
         -- m2XXAugLag (mkInput bQuarks leptons ptmiss 0)
         -- m2CXAugLag (mkInput bQuarks leptons ptmiss 0)
         -- m2XCAugLag (mkInput bQuarks leptons ptmiss 0)
-        -- m2CCAugLag (mkInput bQuarks leptons ptmiss 0)
+        m2CCAugLag (mkInput bQuarks leptons ptmiss 0)
