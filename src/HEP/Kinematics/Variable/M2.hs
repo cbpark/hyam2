@@ -211,18 +211,16 @@ m2ObjF :: InputKinematics -> MultivarFunc
 m2ObjF inp@InputKinematics {..} ks =
     if m1 < m2 then (m2, grad2) else (m1, grad1)
   where
-    invs@(Invisibles k1 k2) = mkInvisibles inp (vecToVars ks)
-    m1 = invariantMass [_p1, k1]
-    m2 = invariantMass [_p2, k2]
-    (grad1, grad2, _) = m2Grad inp invs _p1 _p2 ks
+    invs = mkInvisibles inp (vecToVars ks)
+    (grad1, grad2, m1, m2) = m2Grad inp invs _p1 _p2 ks
 
 m2Grad :: InputKinematics
        -> Invisibles
        -> FourMomentum  -- ^ p1 (or q1)
        -> FourMomentum  -- ^ p2 (or q2)
        -> Vector Double
-       -> (Vector Double, Vector Double, Double)
-m2Grad InputKinematics {..} (Invisibles k1 k2) p1 p2 ks = (d1, d2, m1 - m2)
+       -> (Vector Double, Vector Double, Double, Double)
+m2Grad InputKinematics {..} (Invisibles k1 k2) p1 p2 ks = (d1, d2, m1, m2)
   where
     (k1x, k1y, k1z, k2z) = vecToVars ks
 
@@ -245,10 +243,10 @@ m2Grad InputKinematics {..} (Invisibles k1 k2) p1 p2 ks = (d1, d2, m1 - m2)
                                  , r2 * k2z - p2z ]
 
 constraintF :: FourMomentum -> FourMomentum -> InputKinematics -> MultivarFunc
-constraintF p1 p2 inp ks = (deltaM, grad1 - grad2)
+constraintF p1 p2 inp ks = (m1 - m2, grad1 - grad2)
   where
     invs = mkInvisibles inp (vecToVars ks)
-    (grad1, grad2, deltaM) = m2Grad inp invs p1 p2 ks
+    (grad1, grad2, m1, m2) = m2Grad inp invs p1 p2 ks
 
 constraintA, constraintB :: InputKinematics -> MultivarFunc
 constraintA inp@InputKinematics {..} = constraintF _p1 _p2 inp
