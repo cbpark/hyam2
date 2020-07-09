@@ -244,11 +244,7 @@ m2Grad InputKinematics {..} (Invisibles k1 k2) p1 p2 ks = (d1, d2, m1 - m2)
                                  , 0
                                  , r2 * k2z - p2z ]
 
-constraintF :: FourMomentum
-            -> FourMomentum
-            -> InputKinematics
-            -> Vector Double
-            -> (Double, Vector Double)
+constraintF :: FourMomentum -> FourMomentum -> InputKinematics -> MultivarFunc
 constraintF p1 p2 inp ks = (deltaM, grad1 - grad2)
   where
     invs = mkInvisibles inp (vecToVars ks)
