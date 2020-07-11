@@ -56,8 +56,7 @@ mkInput as bs ptmiss mInv
               m1 = mass p1
               m2 = mass p2
               mInvSq = mInv * mInv
-              scaleSq = getScale p1 + getScale p2 + getScale ptmiss
-                        + m1 * m1 + m2 * m2 + 2 * mInvSq
+              scaleSq = m1 * m1 + m2 * m2 + 2 * mInvSq
           if scaleSq <= 0  -- why?
               then Nothing
               else do let scale = sqrt scaleSq
@@ -74,9 +73,6 @@ mkInput as bs ptmiss mInv
                                                , _ptmiss = ptmiss'
                                                , _mInvSq = mInv' * mInv'
                                                , _scale  = scale }
-  where
-    getScale :: HasFourMomentum a => a -> Double
-    getScale v = let ptv = pt v in ptv
 
 data M2Solution = M2Solution { _M2    :: Double
                              , _k1sol :: FourMomentum
@@ -95,29 +91,33 @@ getM2Solution inp@InputKinematics {..} sol =
                                 , _k1sol = k1 ^* _scale
                                 , _k2sol = k2 ^* _scale }
 
+{-
 initialGuess :: InputKinematics -> Vector Double
 initialGuess InputKinematics { _ptmiss = ptmiss } =
     fromList [0.5 * px ptmiss, 0.5 * py ptmiss, 0, 0]
-{-
+-}
+initialGuess :: InputKinematics -> Vector Double
 initialGuess inp@InputKinematics {..} =
     let objf ks = let Invisibles k1 k2 = mkInvisibles inp (vecToVars ks)
                   in invariantMass [_p1, _p2, k1, k2]
         ks0 = fromList [0.5 * px _ptmiss, 0.5 * py _ptmiss, 0, 0]
-        stop = MaximumEvaluations 100 :| stopObjCond
+        eps' = eps * 0.1
+        stop = MaximumEvaluations 1000
+               :| [ ObjectiveAbsoluteTolerance eps'
+                  , ObjectiveRelativeTolerance eps']
         algorithm = NELDERMEAD objf [] Nothing
         problem = LocalProblem 4 stop algorithm
         sol = minimizeLocal problem ks0
     in case sol of
         Left _                     -> ks0
         Right (Solution _ ksSol _) -> ksSol
--}
 
 eps :: Double
-eps = 1e-2  -- 1e-3 * _scale
+eps = 1e-3
 
 stopObjCond :: [StoppingCondition]
 stopObjCond = [ObjectiveAbsoluteTolerance eps', ObjectiveRelativeTolerance eps']
-  where eps' = eps * 1e-2
+  where eps' = eps * 1e-3
 
 type MultivarFunc = Vector Double -> (Double, Vector Double)
 
@@ -134,7 +134,7 @@ m2SQP cfs (Just inp@InputKinematics {..}) =
         constraints  = (\cf -> EqualityConstraint (Scalar cf) eps)
                        <$> constraints'
 
-        stop = MaximumEvaluations 100 :| stopObjCond
+        stop = MaximumEvaluations 1000 :| stopObjCond
         algorithm = SLSQP objfD [] [] constraints
         problem = LocalProblem 4 stop algorithm
 
